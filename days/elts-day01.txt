@@ -1,0 +1,131 @@
+T-ELTS Project Day01
+2012/2/8
+====================
+1. Swing Java 的图形用户界面
+ 1) AWT 使Java成功技术 : Applet
+   AWT 具有强大的绘图功能
+   AWT 的应用控件很少(按钮,  菜单)
+   AWT 时候开发图形, 不适合开发应用
+ 2) Swing 是利用AWT绘图功能, 完整的重新绘制了一套控件系统
+   包括: 表格, Tree, 等
+   Swing适合写应用软件
+   由于Windows对Swing支持不好, 很少用Swing开发桌面应用程序
+   很少企业 需要Swing人才
+ 3) 学习建议, 了解Swing, 不必深究!
+ 4) SWT 来自IBM 全新的GUI 系统, 包含少量的C代码, 提供全部
+  平台的支持. Swt基本实现了跨平台, 代表产品: Eclipse
+  使用的企业不是很多
+
+2  学习Swing 
+ 1) 简单窗口
+   JFrame 代表有框的窗口, 中必须放置一个面板
+   JPanel 代表空白矩形区域面板, 在面板上可以添加控件/绘制图形
+ 2) 图片加载:
+ 	Class 提供 getResource 方法, 从package中加载
+ 	JFrameDemo.class.getResource("img.png");
+ 	//用类名加载，必须在同一个包中
+ 	
+  任务: 创建一个窗口, 在里面显示一张图片
+ 
+ 3) 布局管理 组件在容器(面板) 中的组件(Button)位置和大小
+  A 空布局 (绝对位置布局) 绝对布局管理, 是指定位置和宽高的布局
+    JFrame (w:574, H:390)
+      |-- JPanel (W:568, H:357)
+            |-- JButton OK (x:369 ,y:327 , w:92 ,H:21 )
+            |-- JButton Cancel (x:466 ,y:327 , w:92 ,H:21 )
+  
+  B 布局管理器(相对位置布局, 组件的大小和位置有布局管理器控制)
+    BorderLayout (边框布局)
+      将一个面板,分为东南西北中,每个位置只能放一个控件
+      中会自动的向其他的四个方法填充
+      ----------------------------
+      |        北(North)         |
+      |--------------------------|
+      |    |               |     |
+      |    |    中         |     |
+      | 西 |    Center     | 东   |
+      |    |               |     |
+      |--------------------------|
+      |        南(South)         |
+      ----------------------------
+      西 west
+      东 east
+      面板套面板
+      
+    FlowLayout (流布局)
+     JPanel 的默认布局是FlowLayout
+      多个元素顺序排序, 一行满了, 排下一行
+    ----------------------------
+    | [OK][OK][OK][OK][OK][OK] |
+    |      [OK][OK][OK]        |
+    |                          |
+    ----------------------------
+    GridLayout 表格布局, 
+     指定行数,列数. 元素按照等宽的行列表格进行布局.
+
+    复杂布局 布局套布局实现复杂界面布局管理.
+ 
+3 简单工厂方法, 用来封装复杂的对象创建过程, 提供简单的方法界面
+
+4 包中资源的加载:
+  Class 实例获得: a. String.class 
+                 b. str.getClass() 
+                 c. Class.forName("java.lang.String")
+  
+  1) 获得类的Class实例.
+  2) 利用Class实例的方法   getResource() 方法获得资源
+  的URL, 可以进一步打开流
+   如: 类 MenuFrame.class 的同包中有图片title.png
+   URL url = getClass().getResourse("title.png")
+   URL url = MenuFrame.class.getResourse("title.png")
+   其中"title.png" 表示相对路径访问, title.png和Class
+   在同一个包下, 如果参数以"/" 表示绝对路径, 访问其中"/"
+   CLASSPATH的根, 如:"/com/tarena/elts/gui/title.png"
+  3) 打开图片 ImageIcon ico = new ImageIcon(url);
+  4) 可以利用InputStream in = url.openStream(); 打开为流
+  5) 从package(classpath 上)中 打开文本文件
+   new BufferedReader(new InputStreamReader(
+   	getClass().getReaource("test.txt").openStream()))              
+   
+5 开发任务: 
+ 1) 创建界面 com.tarena.elts.LoginFrame 
+            com.tarena.elts.MenuFrame
+            com.tarena.elts.ExamFrame
+ 2) 创建实体对象: com.tarena.elts.entity.Question
+                 com.tarena.elts.entity.User
+    其中: User 代表系统登录用户
+         Question 代表试题库中的试题
+ 3) 创建值对象:  com.tarena.elts.entity.ExamInfo
+                com.tarena.elts.entity.QuestionInfo
+    其中: ExamInfo 代表考试状态信息
+         QuestionInfo 代表用户考卷上的试题, 包含题目,用户答案和试题序号
+
+ 4) 如果没有思路想法就通过练习案例学习想法.
+ 
+
+ 
+ 异常
+ 	NullPointerException:引入图片
+ 	ClassCastException
+ 	NumberFormatException
+ 	  算术异常
+ 	ArraysIndexOutOfBoundsException
+ 	
+ 异常的处理
+ 	try{} 可能出现异常的代码块
+ 	catch(系统异常){
+ 		throw 自己定义的异常    }捕获异常  输出
+ 	finally{}必须执行的代码块
+ 	
+ 	自定义异常：
+ 	
+	class 	extends Exception{}
+	
+ Option ExamFrame
+ 	内部类：
+ 		成员内部类
+ 		静态内部类
+ 		局部内部类
+ 		匿名内部类(按钮的监听器)
+ 		Comparable com = new Comparable(){
+ 		};

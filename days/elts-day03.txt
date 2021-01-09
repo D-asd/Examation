@@ -1,0 +1,299 @@
+T-ELTS Project Day03
+2012/2/10
+====================
+1. 三层架构, 整体架构
+ 1) 表现层(数据呈现/用户交互) 
+   在ui包中 的 "用户界面"和"控制器(ClientContext)"
+  如: 接受登录请求
+  
+ 2) 业务层(业务模型), 是软件的核心功能
+  在service包中, 核心接口ExamService
+  如: 登录系统
+ 
+ 3) 数据管理层(数据持久化层), 是提供数据的CRUD管理,增删改查
+  C: 创建, R: 寻回, 查找, U:更新, D:删除.
+  数据管理层: 只关心数据操作, 不涉及业务功能
+  如: 查找用户
+  在entity包中, 核心类: EntityContext, 管理User 和 
+  Question
+
+2. 开始考试功能实现
+ 1) 视图 MenuFrame 中增加事件监听 
+  private ClientContext clientContext;
+  public void setClientContext(ClientContext clientContext) {
+    this.clientContext = clientContext;
+  }
+  //...增加事件监听
+    start.addActionListener(new ActionListener(){
+      public void actionPerformed(ActionEvent e) {
+        clientContext.start();
+      }
+    });
+  更新ExamFrame, 增加: updateView()
+  private JLabel info;//引用到界面控件实例
+  private JLabel questionCount;//引用到界面控件实例
+  private JTextArea question;//引用到界面控件实例
+  public void updateView(
+      ExamInfo examInfo, QuestionInfo questionInfo){
+    info.setText(examInfo.toString());
+    //"题目:20 的 1题"
+    questionCount.setText("题目:"+
+        examInfo.getQuestionCount()+" 的 "+ 
+        (questionInfo.getQuestionIndex()+1)+"题");
+    question.setText(questionInfo.toString());
+  }
+
+  
+ 2) 控制器, 增加事件响应方法start()
+  /** 开始考试 */
+  public void start(){
+    try {
+      //考试信息
+      ExamInfo examInfo = examService.startExam();
+      //第一道考题
+      QuestionInfo questionInfo = 
+        examService.getQuestion(0);
+      examFrame.updateView(examInfo, questionInfo);
+      menuFrame.setVisible(false);
+      examFrame.setVisible(true);
+    } catch (Exception e) {
+      e.printStackTrace();
+      JOptionPane.showMessageDialog(
+          menuFrame, e.getMessage());
+    }
+  }
+
+ 
+ 3) 业务层: 增加: startExam() getQuestion()
+ 开始考试业务描述: 开始考试时候, 抽取考卷试题, 每个level抽取2题
+ 返回考试描述信息:ExamInfo
+ 考卷是: 有抽取的题目组成的线性表集合
+ 获取试题: 根据题目序号获取指定试题
+ 
+  private List<QuestionInfo> paper = 
+    new ArrayList<QuestionInfo>();
+  
+  public QuestionInfo getQuestion(int index) {
+    return paper.get(index);
+  }
+  
+  private User loginUser;
+  
+  private void createPaper(){
+    Random r = new Random();
+    int idx = 0;
+    for(int i=Question.LEVEL1; i<=Question.LEVEL10; i++){
+      List<Question> list = 
+        entityContext.findQuestions(i);
+      //抽出2道题
+      Question q1 = list.remove(r.nextInt(list.size()));
+      Question q2 = list.remove(r.nextInt(list.size()));
+      paper.add(new QuestionInfo(idx++, q1));
+      paper.add(new QuestionInfo(idx++, q2));
+    }
+  }
+  
+  public ExamInfo startExam() {
+    createPaper();
+    ExamInfo info = new ExamInfo();
+    //初始化info ...
+    info.setQuestionCount(paper.size());
+    info.setTimeLimit(entityContext.getTimeLimit());
+    info.setTitle(entityContext.getTitle());
+    info.setUser(loginUser);
+    return info;
+  }
+  
+ 4) 持久层
+  public int getTimeLimit() {
+    return config.getInt("TimeLimit"); 
+  }
+
+  public String getTitle() {
+    return config.getString("PaperTitle"); 
+  }
+  
+ 5) 更新Main.class
+     menuFrame.setClientContext(clientContext);
+3. 上/下一题功能实现 和 交卷
+
+ 1) 视图 (增加界面事件监听)
+  A 增加对控制器的引用
+  private ClientContext clientContext;
+  public void setClientContext(ClientContext clientContext) {
+    this.clientContext = clientContext;
+  }
+  B 增加界面事件监听
+    prev.addActionListener(new ActionListener(){
+      public void actionPerformed(ActionEvent e) {
+        clientContext.prev();
+      }
+    });
+    next.addActionListener(new ActionListener(){
+      public void actionPerformed(ActionEvent e) {
+        clientContext.next();
+      }
+    });
+    send.addActionListener(new ActionListener(){
+      public void actionPerformed(ActionEvent e) {
+        clientContext.send();
+      }
+    });  
+      
+  C 更新视图为下/上一题(更新 用户的答案)
+  private JLabel info;
+  private JLabel questionCount;
+  private JTextArea question;
+  public void updateView(
+      ExamInfo examInfo, QuestionInfo questionInfo){
+    info.setText(examInfo.toString());
+    //"题目:20 的 1题"
+    questionCount.setText("题目:"+
+        examInfo.getQuestionCount()+" 的 "+ 
+        (questionInfo.getQuestionIndex()+1)+"题");
+    question.setText(questionInfo.toString());
+    updateOptions(questionInfo.getUserAnswers());
+  }
+  
+  private void updateOptions(List<Integer> userAnswers) {
+    for (Option o : options) {
+      o.setSelected(false);
+      if(userAnswers.contains(o.val)){
+        o.setSelected(true);
+      }
+    }
+  }
+  public List<Integer> getUserAnswers() {
+    List<Integer> ans = new ArrayList<Integer>();
+    for (Option o : options) {
+      if(o.isSelected()){
+        ans.add(o.val);
+      }
+    }
+    return ans;
+  }    
+    
+ 2) 控制器(增加界面功能实现方法 next() prev(), send())
+   /** 当前正在答对题目, 开始考试时候, 初始化为第一题
+   * 每次翻页, 更新为新的当前题目 */
+  private QuestionInfo currentQuestion;
+  /** 当前考试的状态信息, 在开始考试时候初始化为 考试信息 
+   * 重构开始开始start()代码!
+   */
+  private ExamInfo examInfo;
+  public void next() {
+    try {
+      int idx = currentQuestion.getQuestionIndex();
+      List<Integer> userAnswers = 
+          examFrame.getUserAnswers();
+      examService.saveUserAnswers(idx, userAnswers);
+      currentQuestion = examService.getQuestion(idx+1);
+      examFrame.updateView(examInfo, currentQuestion);
+    } catch (Exception e) {
+      e.printStackTrace();
+      JOptionPane.showMessageDialog(
+          examFrame, e.getMessage());
+    }
+  }
+  public void prev() {
+    try {
+      int idx = currentQuestion.getQuestionIndex();
+      List<Integer> userAnswers = 
+          examFrame.getUserAnswers();
+      examService.saveUserAnswers(idx, userAnswers);
+      currentQuestion = examService.getQuestion(idx-1);
+      examFrame.updateView(examInfo, currentQuestion);
+    } catch (Exception e) {
+      e.printStackTrace();
+      JOptionPane.showMessageDialog(
+          examFrame, e.getMessage());
+    }
+  }
+
+  public void send() {
+ 
+    try {
+      int val = JOptionPane
+        .showConfirmDialog(examFrame, "交吗?");
+      
+      if(val != JOptionPane.YES_OPTION){
+        return;
+      }
+      
+      int idx = currentQuestion.getQuestionIndex();
+      List<Integer> userAnswers = 
+          examFrame.getUserAnswers();
+      examService.saveUserAnswers(idx, userAnswers);
+      
+      int score = examService.examOver();
+      JOptionPane.showMessageDialog(
+          examFrame, "你的分数:"+score);
+      examFrame.setVisible(false);
+      menuFrame.setVisible(true);
+      
+    } catch (Exception e) {
+      e.printStackTrace();
+      JOptionPane.showMessageDialog(
+          examFrame, e.getMessage());
+    }
+
+  }
+ 
+ 
+ 3) 业务层(保存用户答案 saveUserAnswers())
+ 
+  public void saveUserAnswers(int idx, List<Integer> userAnswers) {
+    //保存用户答案到考卷中的考题上
+    paper.get(idx).setUserAnswers(userAnswers);
+  }
+  private int score = 0;
+  public int examOver() {
+    //判分
+    for (QuestionInfo qInfo : paper) {
+      Question q = qInfo.getQuestion();
+      if(qInfo.getUserAnswers().equals(q.getAnswer())){
+        score+=q.getScore();
+      }
+    }
+    return score;
+  }
+ 
+4 查看考分功能实现
+ 1) 界面
+    result.addActionListener(new ActionListener(){
+      public void actionPerformed(ActionEvent e) {
+        clientContext.result();
+      }
+    });
+ 2) 控制器
+  public void result() {
+    try {
+      int score = examService.getScore();
+      JOptionPane.showMessageDialog(
+          menuFrame, "考试分数:"+score);
+      
+    } catch (Exception e) {
+      e.printStackTrace();
+      JOptionPane.showMessageDialog(
+          menuFrame, e.getMessage());
+    }
+  }
+
+ 3) 业务层
+  public int getScore() {
+    if(!finish)
+      throw new RuntimeException("还没有考试呀!");
+    return score;
+  }
+
+5 关闭窗口 问题 与窗口事件监听
+ 1) 设置默认的窗口关闭操作
+    setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+ 2) 绑定窗口关闭事件
+    addWindowListener(new WindowAdapter(){
+      public void windowClosing(WindowEvent e) {
+         clientContext.send();
+      }
+    }); 
+
+ 

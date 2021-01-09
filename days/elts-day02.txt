@@ -1,0 +1,317 @@
+T-ELTS Project Day02
+2012/2/9
+====================
+实现软件的业务功能
+	核心功能
+	数据访问
+
+1. MVC 架构应用
+ 1) Module 业务模型: 软件核心功能的抽象,封装软件核心功能.
+  如: 注册, 登录, 开始考试, 交卷等
+
+ 2) View 视图 (表现): 软件的界面视图, 用来呈现用户数据状态, 
+ 接受用户请求. 界面中只包含界面显示处理逻辑.
+ 
+ 3) Controller: 控制器: 耦合界面与业务模型. 响应处理用户请求, 
+  将用户数据和请求转发给业务模型, 根据业务模型的处理结果, 更新
+  转发视图界面. 控制器中包含界面的控制逻辑.
+ 
+ 4) MVC 请求流程: 用户访问View, 发起请求, 请求由控制器处理, 
+ 控制器请求业务模型完成业务处理, 控制器根据业务处理结果更新用户
+ 界面.  
+
+核心业务抽象(接口) ExamService
+  包含方法 
+      User login(int id, String pwd)
+        throws IdOrPwdException;
+
+2. Swing 控件事件响应
+ 1) 发生事件时候回调接口方法
+    login.addActionListener(new ActionListener(){
+      public void actionPerformed(ActionEvent e) {
+        System.out.println("Login Click");
+      }
+    });
+ 2) 事件方法中不要放置过多逻辑代码
+
+3. MVC 登录流程实现
+ 1)增加LoginFrame界面登录事件响应代码:
+    login.addActionListener(new ActionListener(){
+      public void actionPerformed(ActionEvent e) {
+        clientContext.login();//将请求转发给控制器
+      }
+    });
+ 2)在 LoginFrame 界面增加 控制器(ClientContext) 的引用和
+ 对象注入代码 
+  private ClientContext clientContext;  
+  public void setClientContext(ClientContext context) {
+    this.clientContext = context;
+  }
+ 3) 创建控制器类ClientContext类, 添加登录响应方法
+  public void login(){
+    //System.out.println("Login ");
+    try{
+      int id = loginFrame.getUserId();
+      String pwd = loginFrame.getPwd();
+      User user = examService.login(id, pwd);
+      //登录成功
+      loginFrame.setVisible(false);
+      menuFrame.updateView(user);
+      menuFrame.setVisible(true);
+      
+    }catch(IdOrPwdException e){
+      //登录失败
+      JOptionPane.showMessageDialog(
+          loginFrame, e.getMessage());
+    }
+  }
+ 4) 创建控制器类ClientContext类, 中添加界面对象引用和
+ 注入方法. 达到控制器能够操作这些对象的目的
+  
+  private LoginFrame loginFrame;
+  private MenuFrame menuFrame;
+  private ExamFrame examFrame;
+  private WelcomeWindow welcomeWindow;
+  
+  public void setExamFrame(ExamFrame examFrame) {
+    this.examFrame = examFrame;
+  }
+  //IOC
+  public void setLoginFrame(LoginFrame loginFrame) {
+    this.loginFrame = loginFrame;
+  }
+  public void setMenuFrame(MenuFrame menuFrame) {
+    this.menuFrame = menuFrame;
+  }
+  public void setWelcomeWindow(WelcomeWindow welcomeWindow) {
+    this.welcomeWindow = welcomeWindow;
+  }
+ 5) 为登录界面增加方法, 用来获取用户的ID和PWD
+   //务必将idField 引用到界面控件对象
+  private JTextField idField;
+  public int getUserId() {
+    String str = idField.getText();
+    return Integer.parseInt(str); 
+  }
+//务必将pwdField 引用到界面控件对象
+  private JPasswordField pwdField;
+  public String getPwd() {
+    char[] pwd = pwdField.getPassword();
+    return new String(pwd); 
+  }
+ 6) 增加业务处理模型接口 ExamService, 并且提供登录方法
+    /** 考试软件的核心业务模型 */
+	public interface ExamService {
+	  User login(int id, String pwd)
+	    throws IdOrPwdException;
+	}
+ 7) 为ClientContext 增加业务层接口的引用
+  private ExamService examService;
+  public void setExamService(ExamService examService) {
+    this.examService = examService;
+  }
+  
+ 8) 为MenuFrame界面增加更新用户信息的方法 updateView
+  //务必将info 引用到界面控件对象
+  private JLabel info;
+  public void updateView(User user) {
+    String str = "欢迎 "+user+" 参加杀手考试!";
+    info.setText(str);
+  }
+ 9) 为ClientContext 增加show() 方法, 用来显示软件界面.
+  public void show(){
+    loginFrame.setVisible(true);
+  }
+ 10) 创建LoginTest, 创建ExamService测试实现. 组装对象, 测试软件 
+	public class MVCDemo {
+	
+	  public static void main(String[] args) {
+	    //初始化软件组件(零件)
+	    LoginFrame loginFrame = new LoginFrame();
+	    ExamFrame examFrame = new ExamFrame();
+	    MenuFrame menuFrame = new MenuFrame();
+	    WelcomeWindow welcomeWindow = new WelcomeWindow();
+	    ClientContext clientContext = new ClientContext();
+	    ExamService service = new ExamServiceDemo();
+	    
+	    //组装组件
+	    loginFrame.setClientContext(clientContext);
+	    clientContext.setExamService(service);
+	    clientContext.setLoginFrame(loginFrame);
+	    clientContext.setExamFrame(examFrame);
+	    clientContext.setMenuFrame(menuFrame);
+	    clientContext.setWelcomeWindow(welcomeWindow);
+	    //启动软件界面
+	    clientContext.show();
+	  }
+	  static class ExamServiceDemo implements ExamService{
+	    public User login(int id, String pwd) 
+	      throws IdOrPwdException {
+	      if(id==1000 && pwd.equals("1234")){
+	        return new User("Robin", 1000, "1234");
+	      }
+	      throw new IdOrPwdException("用户名/密码错误!");
+	    }
+	  }
+	}
+
+4. 实现退出系统的功能 
+ 1) 为ClientContext添加exit方法
+  public void exit(JFrame from) {
+    int val = JOptionPane
+      .showConfirmDialog(from, "走吗?");
+    if(val==JOptionPane.YES_OPTION){
+      System.exit(0);
+    }
+  }
+ 2) 绑定到 登录界面的cancel 按钮上
+    cancel.addActionListener(new ActionListener(){
+      public void actionPerformed(ActionEvent e) {
+        clientContext.exit(LoginFrame.this); 
+      }
+    });
+5. 装载用户信息到用户集合 , 从文件中加载用户数据到users集合
+ 1) 增加类EntityContext实现数据访问功能
+    private HashMap<Integer, User> users =
+    new HashMap<Integer, User>();
+  
+  private Config config;
+  public EntityContext(Config config) {
+    this.config = config;
+    loadUsers(config.getString("UserFile")); 
+    //loadQuestions("corejava.txt");
+  }
+  
+  public User getUser(int id){
+    return users.get(id);
+  }
+  
+  /** 从文件中加载用户数据到users集合 */
+  private void loadUsers(String filename){
+    try {
+      BufferedReader in = 
+        new BufferedReader(new InputStreamReader(
+            new FileInputStream(filename), "GBK"));
+      String str;
+      while((str=in.readLine())!=null){
+        if(str.startsWith("#")){
+          continue;
+        }
+        if(str.trim().equals("")){
+          continue;
+        }
+        User u = parseUser(str);
+        users.put(u.getId(), u);
+      }
+      in.close();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+  /** 1000:宁丽娟:1234:13810381038:ninglj@tarena.com.cn */
+  private User parseUser(String str) {
+    //1000:宁丽娟:1234:13810381038:ninglj@tarena.com.cn
+    //用正则表达式建议输入规则
+    String[] data = str.split(":");
+    User u = new User();
+    u.setId(Integer.parseInt(data[0]));
+    u.setName(data[1]);
+    u.setPasswd(data[2]);
+    u.setPhone(data[3]);
+    u.setEmail(data[4]);
+    return u;
+  }
+ 2) 测试加载过程和结果
+  public static void main(String[] args) {
+    EntityContext ctx = new EntityContext(new Config("client.properties"));
+    ctx.loadUsers("user.txt");
+    System.out.println(ctx.users); 
+  }
+
+6. 利用用户数据实现登录业务逻辑
+ 1) 实现业务功能实现类 ExamServiceImpl 的login方法
+  /** 登录业务逻辑实现 */
+  public User login(int id, String pwd) 
+    throws IdOrPwdException {
+    User user = entityContext.getUser(id);
+    if(user==null){
+      throw new IdOrPwdException("查无此人!");
+    }
+    if(user.getPasswd().equals(pwd)){
+      return user;//登录成功
+    }
+    throw new IdOrPwdException("密码错误!");
+  }
+ 2) 实例EntityContext 的注入方法
+  private EntityContext entityContext;
+  public void setEntityContext(EntityContext entityContext) {
+    this.entityContext = entityContext;
+  }  
+7. 系统配置文件的加载
+ 1) Properties 类继承于Hashtable 是一个散列表.
+ 2) Properties 提供了load方法可以将 client.properties 文件
+  读取为散列表对象, 简洁方便
+ 3) Properties 提供散列表查找方法 getProperty(key) 读取key
+  对应的value值.
+ 4) 创建Config 类封装Properties 方便配置文件的读取:
+	public class Config {
+	  //private String file; 
+	  private Properties cfg = new Properties();
+	  
+	  public Config(String file){
+	    try {
+	      cfg.load(new FileInputStream(file));
+	    } catch (Exception e) {
+	      e.printStackTrace();
+	      throw new RuntimeException(e);
+	    }
+	  }
+	  
+	  public String getString(String key){
+	    return cfg.getProperty(key);
+	  }
+	  
+	  public int getInt(String key){
+	    return Integer.parseInt(cfg.getProperty(key));
+	  }
+	  
+	  public double getDouble(String key){
+	    return Double.parseDouble(getString(key));
+	  }
+	} 
+8. 创建整合测试 Main.class
+  public static void main(String[] args) {
+    //初始化软件组件(零件)
+    LoginFrame loginFrame = new LoginFrame();
+    ExamFrame examFrame = new ExamFrame();
+    MenuFrame menuFrame = new MenuFrame();
+    WelcomeWindow welcomeWindow = new WelcomeWindow();
+    ClientContext clientContext = new ClientContext();
+    ExamServiceImpl service = new ExamServiceImpl();
+    Config config = new Config("client.properties");
+    EntityContext entityContext = new EntityContext(config);
+    
+    //组装组件
+    service.setEntityContext(entityContext);
+    loginFrame.setClientContext(clientContext);
+    clientContext.setExamService(service);
+    clientContext.setLoginFrame(loginFrame);
+    clientContext.setExamFrame(examFrame);
+    clientContext.setMenuFrame(menuFrame);
+    clientContext.setWelcomeWindow(welcomeWindow);
+    //启动软件界面
+    clientContext.show();
+
+  }
+9. 参考实现装载Question 的方法 loadQuestions();
+ 1) 实现 loadQuestions() 方法
+ 2) 使用main方法测试
+  public static void main(String[] args) {
+    EntityContext ctx = new EntityContext(new Config("client.properties"));
+    //ctx.loadUsers("user.txt");
+    System.out.println(ctx.users); 
+    System.out.println(ctx.questions); 
+  }
+  
+10 为MenuFrame 添加退出功能
+

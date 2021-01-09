@@ -1,0 +1,418 @@
+T-ELTS Project Day04
+2012/2/13
+====================
+
+美文分享: 
+    不开口, 没有人知道你想什么
+    不去做, 任何想法只在脑海里游泳
+    不迈出脚步, 永远找不到你前进的方向   
+
+1 窗口的居中处理
+  private void center(Window win){
+    Toolkit toolkit = Toolkit.getDefaultToolkit();
+    Dimension screen = toolkit.getScreenSize();
+    int x = (screen.width - win.getWidth()) / 2;
+    int y = (screen.height - win.getHeight())/2;
+    win.setLocation(x, y);
+  }
+  
+  public void show(){
+    center(welcomeWindow);
+    welcomeWindow.setVisible(true);
+    final Timer timer = new Timer();
+    timer.schedule(new TimerTask(){
+      public void run() {
+        welcomeWindow.setVisible(false);
+        center(loginFrame);
+        loginFrame.setVisible(true);
+        timer.cancel();
+      }
+    }, 2000);
+    
+  }
+
+2 考试时间提醒与超时交卷
+ 1) 更新控制器 start方法添加: startTimer();
+ 2) 更新控制器 添加
+  private Timer timer;
+  private void startTimer(){
+    timer = new Timer();
+    int timeout = examInfo.getTimeLimit()*60*1000;
+    final long end = System.currentTimeMillis() + timeout;
+    timer.schedule(new TimerTask(){
+      public void run() {
+        //show 是需要显示的剩余时间
+        long show = end - System.currentTimeMillis();
+        examFrame.updateTime(show);
+      }
+    }, 0, 1000);
+    timer.schedule(new TimerTask(){
+      public void run() {
+        gameOver();//提前交卷!
+      }
+    }, timeout);
+  }
+  
+  public void gameOver() {
+    
+    try {
+      timer.cancel();
+      int idx = currentQuestion.getQuestionIndex();
+      List<Integer> userAnswers = 
+          examFrame.getUserAnswers();
+      examService.saveUserAnswers(idx, userAnswers);
+      
+      int score = examService.examOver();
+      JOptionPane.showMessageDialog(
+          examFrame, "你的分数:"+score);
+      examFrame.setVisible(false);
+      menuFrame.setVisible(true);
+      
+    } catch (Exception e) {
+      e.printStackTrace();
+      JOptionPane.showMessageDialog(
+          examFrame, e.getMessage());
+    }
+
+  }
+  public void send() {
+    int val = JOptionPane.showConfirmDialog(examFrame, "交吗?");
+    if (val != JOptionPane.YES_OPTION) {
+      return;
+    }
+    gameOver();
+  }
+ 3) 更新examFrame 添加显示时间方法
+  private JLabel timer;
+  public void updateTime(long show) {
+    long h = show/1000/60/60;
+    long m = show/1000/60%60;
+    long s = show/1000%60;
+    if(m<=5 && h==0){
+      timer.setForeground(Color.red);
+    }
+    timer.setText(h+":"+m+":"+s);
+  }
+
+3 设置登录界面的默认按钮 
+  更新LoginFrame方法: createBtnPane() 添加:
+  getRootPane().setDefaultButton(login);
+
+4 更新考试界面按钮状态: 
+ 1)添加
+  private JButton next;
+  private JButton prev;
+  private void updateButton(int count , int index){
+    prev.setEnabled(index!=0);
+    next.setEnabled(index!=count-1);
+  }
+ 2) 修改方法updateView() 增加: 
+   updateButton(examInfo.getQuestionCount(),
+       questionInfo.getQuestionIndex());
+ 3) 将next, prev 引用引用到界面按钮控件对象.
+
+5 方法调用实现, Utils.java类 
+ 1) 反射方法调用
+  public static Response call(
+      Object obj, Request request){
+    Response res = new Response();
+    Class cls = obj.getClass();
+    try {
+      Method m = cls.getDeclaredMethod(
+          request.getMethod(), request.getTypes());
+      Object val = m.invoke(obj, request.getParams());
+      res.setValue(val);
+      return res;
+    } catch (InvocationTargetException e) {
+      e.printStackTrace();
+      //方法执行异常
+      Exception ex = (Exception) e.getTargetException();
+      res.setException(ex);
+      return res;
+    }catch(Exception e){
+      e.printStackTrace();
+      res.setException(e);
+      return res;
+    }
+  }
+  方法调用测试:
+	public class MethodCallTest {
+	  public static void main(String[] args) {
+	    Request request = 
+	      new Request("charAt", 
+	          new Class[]{int.class},
+	          new Object[]{2});
+	    Response res = Utils.call("ABCDE", request);
+	    System.out.println(res);//C
+	    
+	    ExamServiceImpl service = new ExamServiceImpl();
+	    Config config = new Config("client.properties");
+	    EntityContext entityContext = new EntityContext(config);
+	    service.setEntityContext(entityContext);
+	    //可以任意调用 service 对象的任何方法
+	    request = new Request("login", 
+	        new Class[]{int.class, String.class},
+	        new Object[]{1001, "1234"});
+	    Response r = Utils.call(service, request);
+	    System.out.println(r);
+	  }
+	
+	}
+
+ 2) 请求与反馈对象序列化 与 远程调用
+ 将Request和Response 对象利用网络流传输, 就可以实现网络远程
+ 方法调用
+
+6 无持续状态连接协议实现
+ 1) 无连接协议原理: 建立连接-发送请求-接收响应-断开连接
+   优点: 充分重用服务器的网络服务能力, 
+   缺点: 不能保持持久连接状态, 不能记住是否已经连接
+   
+   客户端: 建立连接-发送请求-接收响应-断开连接
+     com.tarena.test.ClientDemo.java
+   服务器: 建立连接-接收请求-处理-发送响应-断开连接
+     com.tarena.elts.net.ExamServer.java
+   
+ 2) 无连接协议的状态保持:
+   状态保持目的: 识别是否已经来过
+   采用令牌机制实现: 每次发送请求都带着令牌发送, 服务器检查
+   令牌是否可用, 如果不可用创建新的令牌, 服务器每次发送响应
+   都包含令牌信息. 服务器通过比较令牌是否在以登记的集合中,来
+   确定是那个客户
+ 3) 网络服务端实现:
+	/** 考试应用服务器 */
+	public class ExamServer {
+	  
+	  private Config config;
+	  /** 服务列表, 每个SID对应一个 ExamService 实例, 
+	   * 每个客户对应一个SID */
+	  Map<String, ExamService> serviceMap = 
+	    new HashMap<String, ExamService>();
+	  private EntityContext entityContext;
+	  public void setEntityContext(EntityContext entityContext) {
+	    this.entityContext = entityContext;
+	  }
+	  public ExamServer() {
+	  }
+	  public void setConfig(Config config) {
+	    this.config = config;
+	  }
+	  
+	  public void start(){
+	    int port = config.getInt("ServerPort");
+	    try {
+	      ServerSocket ss = new ServerSocket(port);
+	      while(true){
+	        //等待客户端的连接
+	        Socket s = ss.accept();
+	        new Service(s).start();
+	      }
+	    } catch (IOException e) {
+	      e.printStackTrace();
+	      throw new RuntimeException(e);
+	    }
+	  }
+	  class Service extends Thread{
+	    Socket s;
+	    public Service(Socket s) {
+	      this.s = s;
+	    }
+	    @Override
+	    public void run() {
+	      try {
+	//      接收请求
+	        ObjectInputStream in = 
+	          new ObjectInputStream(s.getInputStream());
+	        Request req = (Request)in.readObject();
+	        //处理-
+	        //String obj = "ABCD";
+	        //根据用户请求req, 找到对应SessionID 的考试服务对象
+	        //一个考试服务对象对应于一个考试客户端(一个考生)
+	        //如果请求req 中 没有SessionID getService()方法会
+	        //创建新的SessionID和ExamService 实力
+	        ExamService service = getService(req);
+	        Response res = Utils.call(service, req);
+	        res.setSessionID(req.getSessionID());
+	        //发送响应
+	        ObjectOutputStream out = 
+	          new ObjectOutputStream(s.getOutputStream());
+	        out.writeObject(res);
+	        //断开连接
+	        s.close();
+	      } catch (Exception e) {
+	        e.printStackTrace();
+	      }
+	      
+	    }
+	  }
+	  
+	
+	  private ExamService getService(Request req) {
+	    String sid = req.getSessionID();
+	    if(sid==null){//如果没有SID 就创建新的
+	      sid = UUID.randomUUID().toString();
+	      req.setSessionID(sid);
+	    }
+	    ExamService service = serviceMap.get(sid);
+	    if(service==null){//第一次访问服务, 需要创建新的service
+	      ExamServiceImpl serviceImpl = 
+	        new ExamServiceImpl();
+	      serviceImpl.setEntityContext(entityContext);
+	      serviceMap.put(sid, serviceImpl);
+	      service = serviceImpl;
+	    }
+	    return service;
+	  }
+	
+	  /** 启动服务器 */
+	  public static void main(String[] args) {
+	    ExamServer server = new ExamServer();
+	    Config config = new Config("server.properties");
+	    EntityContext entityContext = 
+	      new EntityContext(config);
+	    server.setConfig(config);
+	    server.setEntityContext(entityContext);
+	    server.start();
+	  }
+	}
+
+ 4) 网络服务器启动代码:
+	public static void main(String[] args) {
+	    ExamServer server = new ExamServer();
+	    Config config = new Config("server.properties");
+	    EntityContext entityContext = 
+	      new EntityContext(config);
+	    server.setConfig(config);
+	    server.setEntityContext(entityContext);
+	    server.start();
+	  }
+	}
+ 5) 网络服务端测试:
+	public class ExamServerTest {
+	  public static void main(String[] args) 
+	    throws Exception {
+	    //建立连接
+	    Socket socket = new Socket("localhost", 9091);
+	    //建立建立-发送请求-接收响应-断开连接
+	    ObjectOutputStream out = 
+	       new ObjectOutputStream(socket.getOutputStream());
+	    ObjectInputStream in = 
+	      new ObjectInputStream(socket.getInputStream());
+	    
+	    Request request = new Request("login", 
+	        new Class[]{int.class, String.class},
+	        new Object[]{1001, "12345"});
+	    out.writeObject(request);//发送请求
+	    Response r = (Response)in.readObject(); //接收响应
+	    socket.close();// 断开连接;
+	    System.out.println(request);
+	    System.out.println(r);//人名
+	  }
+	}
+ 
+7 代理模式 实现 ExamService接口, login() 方法部分代码
+ 1) login() 方法部分代码
+  public User login(int id, String pwd) throws IdOrPwdException {
+    Request req = new Request();
+    req.setMethod("login");
+    req.setTypes(new Class[] { int.class, String.class });
+    req.setParams(new Object[] { id, pwd });
+    Response r = call(req);
+    if (r.isSuccess()) {
+      return (User) r.getValue();
+    } else if (r.getException() instanceof IdOrPwdException) {
+      throw (IdOrPwdException) r.getException();
+    } else {
+      throw new RuntimeException(r.getException());
+    }
+  }
+
+  2) 远程调用工具方法, 在Utils.java中:
+    /** 
+   * 远程方法调用
+   * @param host 远程主机
+   * @param port 端口号
+   * @param req 方法请求
+   * @return 运行结果
+   */
+  public static Response remoteCall( String host,
+      int port, Request req){
+    try{
+      Socket s = new Socket(host, port);//建立连接
+      //发送请求
+      ObjectOutputStream out = 
+        new ObjectOutputStream(s.getOutputStream());
+      System.out.println("remoteCall request:"+req);
+      out.writeObject(req);
+      //获取响应
+      ObjectInputStream in=
+        new ObjectInputStream(s.getInputStream());
+      Response res = (Response)in.readObject();
+      System.out.println("remoteCall Response:"+res);
+      return res;
+    }catch(Exception e){
+      e.printStackTrace();
+      throw new RuntimeException(e);
+    }
+  }
+  
+  
+  
+ 2) 网络客户端启动代码, 使用 服务网络代理, 替换业务层
+	public class ClientMain {
+	  public static void main(String[] args) {
+	    //配置文件
+	    Config config = new Config("client.properties");
+	    //界面层= 视图+控制器
+	    //视图
+	    LoginFrame loginFrame = new LoginFrame();
+	    MenuFrame menuFrame = new MenuFrame();
+	    ExamFrame examFrame = new ExamFrame();
+	    WelcomeWindow welcomeWindow = new WelcomeWindow();
+	    //控制器
+	    ClientContext clientContext = new ClientContext();
+	    
+	    //业务模型
+	   // ExamServiceImpl examService = new ExamServiceImpl();
+	    ExamServiceAgent examService = new ExamServiceAgent();
+	
+	    //组装 界面层 业务层 和 数据层
+	    loginFrame.setClientContext(clientContext);
+	    menuFrame.setClientContext(clientContext);
+	    examFrame.setClientContext(clientContext);
+	    
+	    clientContext.setExamFrame(examFrame);
+	    clientContext.setLoginFrame(loginFrame);
+	    clientContext.setMenuFrame(menuFrame);
+	    clientContext.setWelcomeWindow(welcomeWindow);
+	    //插接 examService 到 表现层控制器
+	    clientContext.setExamService(examService);
+	    
+	    examService.setConfig(config);
+	    
+	    //启动软件
+	    clientContext.show();
+	
+	  }
+	
+	}
+
+ 
+8 网络代理层 工作原理:
+ 1) 客户端业务请求到网络代理客户端
+ 2) 网络代理将请求通过网络发送到服务器
+ 3) 服务器接收请求通过令牌识别客户端, 找到合适的业务层实例
+ 4) 服务器利用反射调用业务层实例的业务方法.
+ 5) 服务器将业务执行结果发送给客户端代理
+ 6) 客户端代理将结果返回给客户端界面
+  
+
+9 软件实现建议
+ 1) 完整实现桌面版为主要目标
+ 2) 实现网络代理功能为扩展目标
+ 3) 以测试驱动开发, 步步为营, 逐步递归达到目的
+ 4) 坚持编码->测试->Debug, 苦尽甘来.
+ 5) 完整尝试重新实现一遍, 意犹未尽.
+
+ 
+ 
